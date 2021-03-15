@@ -6,7 +6,7 @@
     <RootNamespace>NUnit.VisualStudio.TestAdapter</RootNamespace>
     <!--<TargetFramework>netcoreapp2.1</TargetFramework>-->
     <!-- For testing and debugging-->
-    <TargetFrameworks>net35;netcoreapp2.1</TargetFrameworks>
+    <TargetFrameworks>netcoreapp2.1</TargetFrameworks>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <SourceLinkOriginUrl>https://github.com/nunit/nunit3-vs-adapter</SourceLinkOriginUrl>
     <SourceLinkCreate>true</SourceLinkCreate>
