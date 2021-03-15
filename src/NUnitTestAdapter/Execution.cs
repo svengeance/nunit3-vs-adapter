@@ -164,7 +164,7 @@ namespace NUnit.VisualStudio.TestAdapter
             TestLog.Info($"Ran docker container with result:\n{runResult.StandardOutput}");
 
             if (runResult.ExitCode != 0 && runResult.StandardError is { Length: > 0 })
-                TestLog.Warning("Non-zero exit code");
+                throw new NUnitEngineException($"Failed to run container:\n{runResult.StandardError}");
         }
     }
 
