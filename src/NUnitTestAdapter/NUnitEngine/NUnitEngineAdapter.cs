@@ -135,9 +135,6 @@ namespace NUnit.VisualStudio.TestAdapter.NUnitEngine
 
         public void GenerateTestOutput(NUnitResults testResults, string assemblyPath, string testOutputXmlFolder)
         {
-            if (!settings.UseTestOutputXml)
-                return;
-
             string path = GetXmlFilePath(testOutputXmlFolder, Path.GetFileNameWithoutExtension(assemblyPath), "xml");
             var resultService = GetService<IResultService>();
 

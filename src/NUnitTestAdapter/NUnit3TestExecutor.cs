@@ -29,6 +29,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 using Microsoft.VisualStudio.TestPlatform.ObjectModel.Adapter;
 using NUnit.Engine;
@@ -277,8 +278,25 @@ namespace NUnit.VisualStudio.TestAdapter
                 {
                     var discovery = new DiscoveryConverter(TestLog, Settings);
                     discovery.Convert(discoveryResults, assemblyPath);
-                    var ea = ExecutionFactory.Create(this);
-                    ea.Run(filter, discovery, this);
+                    var fixtures = discovery.AllTestCases.Select(s => s.ClassName).Distinct();
+                    foreach (var fixture in fixtures)
+                    {
+                        Log.Info($"Executing fixture {fixture}");
+                        var testsStartingWithFixture = discovery.AllTestCases.Where(w => w.ClassName == fixture);
+                        var newFilterStringBuilder = new StringBuilder();
+
+                        newFilterStringBuilder.Append("<filter><or>");
+                        testsStartingWithFixture.Aggregate(newFilterStringBuilder, (sb, test) => sb.Append("<test>").Append(test.FullName).Append("</test>"));
+                        newFilterStringBuilder.Append("</or></filter>");
+
+                        var newFilter = new TestFilter(newFilterStringBuilder.ToString());
+                        var newDiscoveryResults = NUnitEngineAdapter.Explore(newFilter);
+                        var newDiscovery = new DiscoveryConverter(TestLog, Settings);
+
+                        newDiscovery.Convert(newDiscoveryResults, assemblyPath);
+                        var ea = ExecutionFactory.Create(this);
+                        ea.Run(newFilter, newDiscovery, this);
+                    }
                 }
                 else
                 {

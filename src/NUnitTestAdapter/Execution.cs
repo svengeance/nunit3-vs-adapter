@@ -1,4 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Xml;
+using CliWrap;
+using CliWrap.Buffered;
 using NUnit.Engine;
 using NUnit.VisualStudio.TestAdapter.Dump;
 using NUnit.VisualStudio.TestAdapter.NUnitEngine;
@@ -20,6 +27,8 @@ namespace NUnit.VisualStudio.TestAdapter
     {
         public static Execution Create(IExecutionContext ctx)
         {
+            if (Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") != "true")
+                return new DockerExecution(ctx);
             if (ctx.Settings.DesignMode) // We come from IDE
                 return new IdeExecution(ctx);
             return new VsTestExecution(ctx);
@@ -84,6 +93,78 @@ namespace NUnit.VisualStudio.TestAdapter
                 filter = filterBuilder.FilterByList(discovery.LoadedTestCases);
             }
             return filter;
+        }
+    }
+
+    public class DockerExecution : Execution
+    {
+        public DockerExecution(IExecutionContext ctx) : base(ctx)
+        {
+        }
+
+        public override bool Run(TestFilter filter, DiscoveryConverter discovery, NUnit3TestExecutor nUnit3TestExecutor)
+        {
+            var assemblyDirectory = Path.GetDirectoryName(discovery.AssemblyPath);
+            var assemblyName = Path.GetFileName(discovery.AssemblyPath);
+            var nunitResultsDir_host = Directory.CreateDirectory(Path.Combine(assemblyDirectory, "husky_test_results"));
+
+            BuildTestImage(assemblyDirectory, "husky-test-runner");
+            RunTestContainer(assemblyDirectory, assemblyName, nunitResultsDir_host.FullName, discovery.AllTestCases.Select(s => s.FullName));
+
+            var testResult = nunitResultsDir_host.EnumerateFiles().First();
+            var xmlDoc = new XmlDocument();
+            xmlDoc.Load(System.IO.File.OpenRead(testResult.FullName));
+            var testCaseResults = xmlDoc.SelectNodes("//test-case").OfType<XmlNode>().Select(s => new NUnitTestEventTestCase(s));
+            var outputNodes = new List<INUnitTestEventTestOutput>();
+            foreach (var test in testCaseResults)
+            {
+                var convertedCase = discovery.TestConverter.GetVsTestResults(test, outputNodes);
+                nUnit3TestExecutor.FrameworkHandle.RecordResult(convertedCase.TestCaseResult);
+            }
+
+            return true;
+        }
+
+        public override TestFilter CheckFilterInCurrentMode(TestFilter filter, IDiscoveryConverter discovery) => filter; // Assume current filter is good
+
+        private void BuildTestImage(string dockerFileDirectory, string imageName)
+        {
+            var buildResult = Cli.Wrap("cmd.exe")
+                                 .WithArguments($"/c docker build -t {imageName} .")
+                                 .WithWorkingDirectory(dockerFileDirectory)
+                                 .ExecuteBufferedAsync().GetAwaiter().GetResult();
+
+            TestLog.Info($"Built docker container with result:\n{buildResult.StandardOutput}");
+
+            if (buildResult.ExitCode != 0)
+                throw new NUnitEngineException($"Failed to build container:\n{buildResult.StandardError}");
+        }
+
+        private void RunTestContainer(string assemblyDirectory, string assemblyName, string testResultsDirectory, IEnumerable<string> testCaseNames)
+        {
+            var testResultsFolder = "husky_test_results";
+            var imageName = "husky-test-runner";
+
+            var nunitResultsDir_container = Directory.CreateDirectory(Path.Combine("C:/", testResultsFolder));
+            var testsToRun = new StringBuilder().Append("FullyQualifiedName=").AppendJoin("|FullyQualifiedName=", testCaseNames);
+            var dockerCommand =
+                $"/c" +
+                $" docker run" +
+                $" -v \"{testResultsDirectory}:{nunitResultsDir_container}\"" +
+                $" {imageName} {assemblyName}" +
+                $" --filter \"{testsToRun}\"" +
+                $" -- NUnit.TestOutputXml={nunitResultsDir_container}";
+
+            var runResult = Cli.Wrap("cmd.exe")
+                               .WithArguments(dockerCommand)
+                               .WithWorkingDirectory(assemblyDirectory)
+                               .WithValidation(CommandResultValidation.None)
+                               .ExecuteBufferedAsync().GetAwaiter().GetResult();
+
+            TestLog.Info($"Ran docker container with result:\n{runResult.StandardOutput}");
+
+            if (runResult.ExitCode != 0 && runResult.StandardError is { Length: > 0 })
+                TestLog.Warning("Non-zero exit code");
         }
     }
 
