@@ -64,9 +64,6 @@ namespace NUnit.VisualStudio.TestAdapter
             Initialize(discoveryContext, messageLogger);
             TestLog.Info($"NUnit Adapter {AdapterVersion}: Test discovery starting");
 
-            // Ensure any channels registered by other adapters are unregistered
-            CleanUpRegisteredChannels();
-
             if (Settings.InProcDataCollectorsAvailable && sources.Count() > 1)
             {
                 TestLog.Error("Unexpected to discover tests in multiple assemblies when InProcDataCollectors specified in run configuration.");

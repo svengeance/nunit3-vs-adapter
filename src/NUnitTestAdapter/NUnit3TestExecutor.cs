@@ -235,8 +235,6 @@ namespace NUnit.VisualStudio.TestAdapter
             FrameworkHandle = frameworkHandle;
             VsTestFilter = VsTestFilterFactory.CreateVsTestFilter(Settings, runContext);
 
-            CleanUpRegisteredChannels();
-
             TestLog.Debug("KeepAlive: " + runContext.KeepAlive);
             TestLog.Debug("UseVsKeepEngineRunning: " + Settings.UseVsKeepEngineRunning);
 
@@ -257,6 +255,7 @@ namespace NUnit.VisualStudio.TestAdapter
 
         private void RunAssembly(string assemblyPath, IGrouping<string, TestCase> testCases, TestFilter filter)
         {
+            InitializeSerilogAndSeq();
             string actionText = Debugger.IsAttached ? "Debugging " : "Running ";
             string selectionText = filter == null || filter == TestFilter.Empty ? "all" : "selected";
             TestLog.Info(actionText + selectionText + " tests in " + assemblyPath);
@@ -278,11 +277,18 @@ namespace NUnit.VisualStudio.TestAdapter
                 {
                     var discovery = new DiscoveryConverter(TestLog, Settings);
                     discovery.Convert(discoveryResults, assemblyPath);
-                    var fixtures = discovery.AllTestCases.Select(s => s.ClassName).Distinct();
+                    var fixtures = discovery.AllTestCases.Select(s => s.ClassName).Distinct().ToArray();
+                    var url = $"http://localhost:{Docker.SeqPort}/#/events?autorefresh";
+
+                    if (!Docker.IsInDockerContainer())
+                        Process.Start(new ProcessStartInfo { UseShellExecute = true, FileName = "msedge", Arguments = $"--new-window {url}" });
+
+                    SeriLogger.Logger.Information("Beginning execution of {fixtureCount} fixtures", fixtures.Count());
+
                     foreach (var fixture in fixtures)
                     {
-                        Log.Info($"Executing fixture {fixture}");
-                        var testsStartingWithFixture = discovery.AllTestCases.Where(w => w.ClassName == fixture);
+                        var testsStartingWithFixture = discovery.AllTestCases.Where(w => w.ClassName == fixture).ToList();
+                        SeriLogger.Logger.Information("Executing {testCount} tests in fixture {fixture}", testsStartingWithFixture.Count, fixture);
                         var newFilterStringBuilder = new StringBuilder();
 
                         newFilterStringBuilder.Append("<filter><or>");

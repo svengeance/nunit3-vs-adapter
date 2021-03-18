@@ -36,13 +36,21 @@ using TestEngineClass = NUnit.Engine.TestEngine;
 using System.Runtime.Remoting.Channels;
 #endif
 using System.Linq;
+using System.Net.Http;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 using Microsoft.VisualStudio.TestPlatform.ObjectModel.Adapter;
 using Microsoft.VisualStudio.TestPlatform.ObjectModel.Logging;
 using NUnit.Common;
 using NUnit.Engine;
+using NUnit.VisualStudio.TestAdapter.Internal;
 using NUnit.VisualStudio.TestAdapter.NUnitEngine;
+using Serilog;
+using Serilog.Events;
+using Serilog.Formatting.Json;
+using Serilog.Sinks.SystemConsole.Themes;
 
 
 namespace NUnit.VisualStudio.TestAdapter
@@ -304,15 +312,56 @@ namespace NUnit.VisualStudio.TestAdapter
             runSettings[PackageSettings.TestParameters] = oldFrameworkSerializedParameters.ToString(0, oldFrameworkSerializedParameters.Length - 1);
         }
 
-        /// <summary>
-        /// Ensure any channels registered by other adapters are unregistered.
-        /// </summary>
-        protected static void CleanUpRegisteredChannels()
+        public void InitializeSerilogAndSeq()
         {
-#if NET35
-            foreach (var chan in ChannelServices.RegisteredChannels)
-                ChannelServices.UnregisterChannel(chan);
-#endif
+            if (!Docker.IsInDockerContainer())
+            {
+                var seqDockerDirectory = Path.Combine(Directory.GetCurrentDirectory(), "Seq.Windows");
+                CreateDockerNetworkIfNotExist(Docker.TestNetworkName);
+                BuildAndRunSeqContainerIfNotRunning(seqDockerDirectory, Docker.SeqImageName, Docker.SeqContainerName, Docker.TestNetworkName);
+            }
+
+            SeriLogger.Initialize();
+        }
+
+        private void BuildSeqImage(string dockerFileDirectory, string imageName)
+            => _ = Docker.ExecuteDockerCommand($"build --build-arg SEQ_VERSION={Docker.SeqVersion} -t {imageName} .", dockerFileDirectory);
+
+        private void BuildAndRunSeqContainerIfNotRunning(string seqDockerDirectory, string imageName, string containerName, string networkName)
+        {
+            var isSeqCreated = Docker.ExecuteDockerCommand("container ls")
+                                     .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                                     .Any(a => a.Contains(containerName));
+
+            var isSeqRunning = isSeqCreated && Docker.ExecuteDockerCommand($"container inspect -f '{{{{.State.Running}}}}' {containerName}").Contains("true");
+
+            if (isSeqRunning)
+                return;
+
+            BuildSeqImage(seqDockerDirectory, imageName);
+
+            var dockerCommand =
+                $"run" +
+                $" -d" +
+                $" --rm" +
+                $" -e ACCEPT_EULA=Y" +
+                $" -p {Docker.SeqPort}:{Docker.SeqPort}" +
+                $" --name {containerName}" +
+                $" --network {networkName}" +
+                $" {imageName}";
+
+            _ = Docker.ExecuteDockerCommand(dockerCommand);
+        }
+
+        private void CreateDockerNetworkIfNotExist(string networkName)
+        {
+            var dockerNetworks = Docker.ExecuteDockerCommand("network ls");
+
+            if (dockerNetworks.Split(' ').Any(a => a == networkName))
+                return;
+
+            // Todo: If not windows, don't need this driver
+            _ = Docker.ExecuteDockerCommand($"network create --driver nat {networkName}");
         }
 
         protected void Unload()
@@ -321,6 +370,7 @@ namespace NUnit.VisualStudio.TestAdapter
                 return;
             NUnitEngineAdapter.Dispose();
             NUnitEngineAdapter = null;
+            SeriLogger.Dispose();
         }
 
 #endregion

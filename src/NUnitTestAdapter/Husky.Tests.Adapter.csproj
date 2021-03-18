@@ -8,8 +8,6 @@
     <!-- For testing and debugging-->
     <TargetFrameworks>netcoreapp2.1</TargetFrameworks>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <SourceLinkOriginUrl>https://github.com/nunit/nunit3-vs-adapter</SourceLinkOriginUrl>
-    <SourceLinkCreate>true</SourceLinkCreate>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
@@ -31,11 +29,17 @@
 
   <ItemGroup>
     <None Remove="Dockerfile" />
+    <None Remove="Seq.Windows\Dockerfile" />
+    <None Remove="Seq.Windows\Run.ps1" />
+    <None Remove="Seq.Windows\Setup.ps1" />
   </ItemGroup>
 
   <ItemGroup>
     <Content Include="..\..\LICENSE.txt" Link="LICENSE.txt" />
     <Content Include="Dockerfile">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Seq.Windows\**\*">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
@@ -44,6 +48,12 @@
     <PackageReference Include="CliWrap" Version="3.3.1" />
     <PackageReference Include="SourceLink.Create.CommandLine" Version="2.8.3" PrivateAssets="All" />
     <PackageReference Include="nunit.engine" Version="3.11.1" />
+    <PackageReference Include="Serilog" Version="2.10.0" />
+    <PackageReference Include="Serilog.Extensions.Logging" Version="3.0.1" />
+    <PackageReference Include="Serilog.Sinks.Async" Version="1.4.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="3.1.1" />
+    <PackageReference Include="Serilog.Sinks.File" Version="4.1.0" />
+    <PackageReference Include="Serilog.Sinks.Seq" Version="5.0.0" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net35'">
