@@ -3,21 +3,12 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Xml;
-using CliWrap;
-using CliWrap.Buffered;
 using NUnit.Engine;
 using NUnit.VisualStudio.TestAdapter.Dump;
 using NUnit.VisualStudio.TestAdapter.Internal;
 using NUnit.VisualStudio.TestAdapter.NUnitEngine;
-using Serilog;
-using Serilog.Events;
-using Serilog.Formatting.Json;
-using Serilog.Sinks.SystemConsole.Themes;
 
 namespace NUnit.VisualStudio.TestAdapter
 {
@@ -119,15 +110,20 @@ namespace NUnit.VisualStudio.TestAdapter
 
             BuildTestImage(assemblyDirectory, Docker.TestImageName);
 
+            SeriLogger.Logger.Information("Running test container - this may take a while");
             var sw = Stopwatch.StartNew();
             RunTestContainer(assemblyDirectory, assemblyName, nunitResultsDir_host.FullName, Docker.TestContainerName, Docker.TestNetworkName, discovery.AllTestCases.Select(s => s.FullName));
             var testExecutionTimeMs = sw.ElapsedMilliseconds;
+
+            // Read results that were shared to host
             var testResult = nunitResultsDir_host.EnumerateFiles().First();
             var xmlDoc = new XmlDocument();
             xmlDoc.LoadXml(System.IO.File.ReadAllText(testResult.FullName));
             var testCaseResults = xmlDoc.SelectNodes("//test-case").OfType<XmlNode>().Select(s => new NUnitTestEventTestCase(s)).ToArray();
             SeriLogger.Logger.Information("Executed {testCasesExecuted} test(s) in {timeTaken}ms", testCaseResults.Length, testExecutionTimeMs);
             var outputNodes = new List<INUnitTestEventTestOutput>();
+
+            // Record results to VS Test Explorer
             foreach (var test in testCaseResults)
             {
                 var convertedCase = discovery.TestConverter.GetVsTestResults(test, outputNodes);
@@ -135,6 +131,7 @@ namespace NUnit.VisualStudio.TestAdapter
                 nUnit3TestExecutor.FrameworkHandle.RecordResult(convertedCase.TestCaseResult);
             }
 
+            // We've read and recorded our results - prevent subsequent tests from overriding
             testResult.Delete();
             return true;
         }
